@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Mensagens recebidas</title>
+<style>
+  :root{
+    --asphalt:#1C1F26;
+    --paper:#F5F4F0;
+    --yellow:#F2B705;
+    --green:#2E7D5B;
+    --slate:#5B6472;
+    --white:#FFFFFF;
+    --line: rgba(28,31,38,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system,'Segoe UI',Roboto,sans-serif;
+    background:var(--paper); color:var(--asphalt); margin:0; padding:32px;
+  }
+  h1{font-size:1.5rem; margin-bottom:6px;}
+  p.sub{color:var(--slate); margin-bottom:28px;}
+  #loginBox{
+    max-width:340px; margin:80px auto; background:var(--white); padding:32px;
+    border-radius:10px; border:1px solid var(--line); text-align:center;
+  }
+  #loginBox input{
+    width:100%; padding:12px; margin:16px 0; border:1px solid var(--line);
+    border-radius:6px; font-size:1rem;
+  }
+  #loginBox button, .btn{
+    background:var(--asphalt); color:var(--white); border:none; padding:12px 20px;
+    border-radius:6px; font-weight:600; cursor:pointer; font-size:0.95rem;
+  }
+  #loginBox button:hover, .btn:hover{background:var(--green);}
+  #erroLogin{color:#c0392b; font-size:0.85rem; margin-top:8px; display:none;}
+  #app{display:none; max-width:900px; margin:0 auto;}
+  table{width:100%; border-collapse:collapse; background:var(--white); border-radius:8px; overflow:hidden;}
+  th, td{padding:12px 14px; text-align:left; border-bottom:1px solid var(--line); font-size:0.9rem;}
+  th{background:var(--asphalt); color:var(--white); font-weight:600;}
+  tr.nao-lida{font-weight:700;}
+  .badge{
+    display:inline-block; padding:3px 9px; border-radius:20px; font-size:0.75rem;
+    background:var(--yellow); color:var(--asphalt); font-weight:700;
+  }
+  .acoes button{
+    border:none; background:none; cursor:pointer; font-size:0.8rem; margin-right:10px;
+    color:var(--green); font-weight:600;
+  }
+  .acoes button.excluir{color:#c0392b;}
+  #vazio{text-align:center; padding:40px; color:var(--slate);}
+</style>
+</head>
+<body>
+
+<div id="loginBox">
+  <h1>Painel de Admin</h1>
+  <p class="sub">Digite a senha para ver as mensagens</p>
+  <input type="password" id="senhaInput" placeholder="Senha">
+  <button onclick="login()">Entrar</button>
+  <div id="erroLogin">Senha incorreta.</div>
+</div>
+
+<div id="app">
+  <h1>Mensagens recebidas</h1>
+  <p class="sub">Contatos enviados pelo formulário do site</p>
+  <div id="conteudo">Carregando...</div>
+</div>
+
+<script>
+  const API = ''; // mesmo domínio do backend
+  let senha = localStorage.getItem('admin_senha') || '';
+
+  if (senha) {
+    document.getElementById('loginBox').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    carregarMensagens();
+  }
+
+  function login() {
+    senha = document.getElementById('senhaInput').value;
+    localStorage.setItem('admin_senha', senha);
+    document.getElementById('loginBox').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    carregarMensagens();
+  }
+
+  async function carregarMensagens() {
+    const conteudo = document.getElementById('conteudo');
+    try {
+      const res = await fetch(`${API}/api/mensagens`, {
+        headers: { 'x-admin-password': senha }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('admin_senha');
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('loginBox').style.display = 'block';
+        document.getElementById('erroLogin').style.display = 'block';
+        return;
+      }
+      const mensagens = await res.json();
+      if (mensagens.length === 0) {
+        conteudo.innerHTML = '<div id="vazio">Nenhuma mensagem recebida ainda.</div>';
+        return;
+      }
+      conteudo.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>Telefone</th><th>Categoria</th><th>Mensagem</th><th>Data</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${mensagens.map(m => `
+              <tr class="${m.lida ? '' : 'nao-lida'}">
+                <td>${escapeHtml(m.nome)} ${m.lida ? '' : '<span class="badge">nova</span>'}</td>
+                <td>${escapeHtml(m.telefone)}</td>
+                <td>${escapeHtml(m.categoria || '—')}</td>
+                <td>${escapeHtml(m.mensagem || '—')}</td>
+                <td>${new Date(m.criado_em).toLocaleString('pt-BR')}</td>
+                <td class="acoes">
+                  ${m.lida ? '' : `<button onclick="marcarLida(${m.id})">Marcar lida</button>`}
+                  <button class="excluir" onclick="excluir(${m.id})">Excluir</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (err) {
+      conteudo.innerHTML = '<div id="vazio">Erro ao carregar mensagens. Tente recarregar a página.</div>';
+    }
+  }
+
+  async function marcarLida(id) {
+    await fetch(`${API}/api/mensagens/${id}/lida`, {
+      method: 'PATCH',
+      headers: { 'x-admin-password': senha }
+    });
+    carregarMensagens();
+  }
+
+  async function excluir(id) {
+    if (!confirm('Excluir esta mensagem?')) return;
+    await fetch(`${API}/api/mensagens/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-admin-password': senha }
+    });
+    carregarMensagens();
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+
+</body>
+</html>
